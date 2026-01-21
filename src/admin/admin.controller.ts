@@ -9,7 +9,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '@prisma/client';
-import { AuthService } from '../auth/auth.service';
+import { AuthService, AdminMetrics } from '../auth/auth.service';
 
 @ApiTags('admin')
 @Controller('admin')
@@ -25,7 +25,7 @@ export class AdminController {
     status: 200,
     description: 'System metrics and recent audit logs',
   })
-  async getMetrics() {
+  async getMetrics(): Promise<AdminMetrics> {
     return this.authService.getAdminMetrics();
   }
 }

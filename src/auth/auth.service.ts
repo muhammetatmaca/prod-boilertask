@@ -15,17 +15,24 @@ import {
   VerifyEmailDto,
 } from './dto/auth.dto';
 import * as bcrypt from 'bcryptjs';
-import { Role, User, AuditEvent } from '@prisma/client';
+import { Role, User, AuditEvent, Prisma } from '@prisma/client';
 import { createHash, randomBytes } from 'crypto';
 
-interface AuthResponse {
+export interface UserProfile {
+  id: string;
+  email: string;
+  role: Role;
+  is_email_verified: boolean;
+}
+
+export interface AuthResponse {
   user: Omit<User, 'password_hash'>;
   access_token: string;
   refresh_token: string;
   expires_in: number;
 }
 
-interface AdminMetrics {
+export interface AdminMetrics {
   userCount: number;
   auditCount: number;
   activeTokens: number;
@@ -332,7 +339,7 @@ export class AuthService {
     return { message: 'Şifreniz başarıyla sıfırlandı' };
   }
 
-  async getProfile(userId: string): Promise<any> {
+  async getProfile(userId: string): Promise<UserProfile> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
     });
@@ -411,7 +418,7 @@ export class AuthService {
         user_id: userId,
         ip_address: ip,
         user_agent: userAgent,
-        metadata: (metadata || {}) as any,
+        metadata: (metadata || {}) as Prisma.InputJsonValue,
       },
     });
   }
@@ -425,7 +432,9 @@ export class AuthService {
 
     const accessToken = this.jwtService.sign(payload, {
       secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
-      expiresIn: accessExpiresIn as any,
+      expiresIn: accessExpiresIn as Parameters<
+        JwtService['sign']
+      >[1]['expiresIn'],
     });
 
     const expiresInSeconds = this.parseExpirationToSeconds(accessExpiresIn);

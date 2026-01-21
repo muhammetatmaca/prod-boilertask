@@ -15,7 +15,7 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { Request } from 'express';
-import { AuthService } from './auth.service';
+import { AuthService, UserProfile, AuthResponse } from './auth.service';
 import {
   RegisterDto,
   LoginDto,
@@ -28,7 +28,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
-import { Role } from '@prisma/client';
+import { Role, User } from '@prisma/client';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -38,7 +38,10 @@ export class AuthController {
   @Post('register')
   @ApiOperation({ summary: 'Yeni kullanıcı kaydı oluşturur' })
   @ApiResponse({ status: 201, description: 'Kullanıcı başarıyla oluşturuldu' })
-  async register(@Req() req: Request, @Body() dto: RegisterDto) {
+  async register(
+    @Req() req: Request,
+    @Body() dto: RegisterDto,
+  ): Promise<AuthResponse> {
     const userAgent = req.headers['user-agent'];
     return this.authService.register(dto, req.ip, userAgent);
   }
@@ -47,7 +50,10 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'E-posta adresini doğrulama kodu ile doğrular' })
   @ApiResponse({ status: 200, description: 'E-posta başarıyla doğrulandı' })
-  async verifyEmail(@Req() req: Request, @Body() dto: VerifyEmailDto) {
+  async verifyEmail(
+    @Req() req: Request,
+    @Body() dto: VerifyEmailDto,
+  ): Promise<{ message: string }> {
     const userAgent = req.headers['user-agent'];
     return this.authService.verifyEmail(dto, req.ip, userAgent);
   }
@@ -58,7 +64,10 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Giriş başarılı' })
   @ApiResponse({ status: 401, description: 'Hatalı bilgiler' })
   @ApiResponse({ status: 403, description: 'Hesap kilitli veya devre dışı' })
-  async login(@Req() req: Request, @Body() dto: LoginDto) {
+  async login(
+    @Req() req: Request,
+    @Body() dto: LoginDto,
+  ): Promise<AuthResponse> {
     const userAgent = req.headers['user-agent'];
     return this.authService.login(dto, req.ip, userAgent);
   }
@@ -69,7 +78,10 @@ export class AuthController {
     summary: 'Refresh token kullanarak yeni access token üretir',
   })
   @ApiResponse({ status: 200, description: 'Tokenlar başarıyla yenilendi' })
-  async refreshToken(@Req() req: Request, @Body() dto: RefreshTokenDto) {
+  async refreshToken(
+    @Req() req: Request,
+    @Body() dto: RefreshTokenDto,
+  ): Promise<Omit<AuthResponse, 'user'>> {
     const userAgent = req.headers['user-agent'];
     return this.authService.refreshToken(dto.refresh_token, req.ip, userAgent);
   }
@@ -84,7 +96,7 @@ export class AuthController {
     @Req() req: Request,
     @CurrentUser() user: { userId: string },
     @Body() dto?: RefreshTokenDto,
-  ) {
+  ): Promise<{ message: string }> {
     const userAgent = req.headers['user-agent'];
     return this.authService.logout(
       user.userId,
@@ -101,7 +113,10 @@ export class AuthController {
     status: 200,
     description: 'Talep alındı (güvenlik için kullanıcı varlığı belirtilmez)',
   })
-  async forgotPassword(@Req() req: Request, @Body() dto: ForgotPasswordDto) {
+  async forgotPassword(
+    @Req() req: Request,
+    @Body() dto: ForgotPasswordDto,
+  ): Promise<{ message: string }> {
     const userAgent = req.headers['user-agent'];
     return this.authService.forgotPassword(dto, req.ip, userAgent);
   }
@@ -110,7 +125,10 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Token kullanarak şifreyi sıfırlar' })
   @ApiResponse({ status: 200, description: 'Şifre başarıyla güncellendi' })
-  async resetPassword(@Req() req: Request, @Body() dto: ResetPasswordDto) {
+  async resetPassword(
+    @Req() req: Request,
+    @Body() dto: ResetPasswordDto,
+  ): Promise<{ message: string }> {
     const userAgent = req.headers['user-agent'];
     return this.authService.resetPassword(dto, req.ip, userAgent);
   }
@@ -122,7 +140,9 @@ export class AuthController {
     summary: 'Giriş yapmış kullanıcının profil bilgilerini getirir',
   })
   @ApiResponse({ status: 200, description: 'Profil başarıyla getirildi' })
-  async getProfile(@CurrentUser() user: { userId: string }) {
+  async getProfile(
+    @CurrentUser() user: { userId: string },
+  ): Promise<UserProfile> {
     return this.authService.getProfile(user.userId);
   }
 
@@ -137,7 +157,9 @@ export class AuthController {
     status: 201,
     description: 'Kullanıcı admin tarafından oluşturuldu',
   })
-  async createUserByAdmin(@Body() dto: RegisterDto) {
+  async createUserByAdmin(
+    @Body() dto: RegisterDto,
+  ): Promise<Omit<User, 'password_hash'>> {
     return this.authService.createUserByAdmin(dto);
   }
 }
