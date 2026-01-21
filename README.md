@@ -102,7 +102,20 @@ npm run test:e2e
 
 ## 📂 Yapılandırma
 
-Ortam değişkenleri `.env` dosyaları üzerinden yönetilir:
-- `.env.development` - Geliştirme ortamı.
-- `.env.test` - Test ortamı.
-- `.env.production` - Prodüksiyon şablonu.
+Ortam değişkenleri `.env` dosyaları üzerinden yönetilir. Projeyi ilk kurduğunuzda `.env.example` dosyasını baz alarak kendi yapılandırmanızı oluşturmalısınız:
+
+1. `.env.example` dosyasını `.env.development` (veya `.env`) olarak kopyalayın.
+2. Aşağıdaki kritik değişkenleri güçlü ve benzersiz değerlerle güncelleyin:
+   - `JWT_ACCESS_SECRET`: Erişim jetonlarını imzalamak için kullanılır.
+   - `JWT_REFRESH_SECRET`: Yenileme jetonlarını imzalamak için kullanılır.
+   - `DATABASE_URL`: PostgreSQL bağlantı adresiniz.
+
+**Örnek:**
+```bash
+cp .env.example .env.development
+```
+
+Aşağıdaki dosyalar farklı ortamlar için kullanılır:
+- `.env.development`: Yerel geliştirme ortamı.
+- `.env.test`: Jest testleri için kullanılan ortam (ayrı bir test veritabanı önerilir).
+- `.env.production`: Canlı sistem (Production) için gereken şablon.
