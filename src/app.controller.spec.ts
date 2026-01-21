@@ -14,9 +14,9 @@ describe('AppController', () => {
     appController = app.get<AppController>(AppController);
   });
 
-  describe('kök dizin (root)', () => {
-    it('"Merhaba Dünya!" döndürmeli', () => {
-      expect(appController.getHello()).toBe('Merhaba Dünya!');
+  describe('root', () => {
+    it('should return "Hello World!"', () => {
+      expect(appController.getHello()).toBe('Hello World!');
     });
   });
 });
