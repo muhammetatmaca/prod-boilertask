@@ -1,385 +1,504 @@
-import { Injectable, UnauthorizedException, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
-import { RegisterDto, LoginDto, ForgotPasswordDto, ResetPasswordDto, VerifyEmailDto } from './dto/auth.dto';
+import {
+  RegisterDto,
+  LoginDto,
+  ForgotPasswordDto,
+  ResetPasswordDto,
+  VerifyEmailDto,
+} from './dto/auth.dto';
 import * as bcrypt from 'bcryptjs';
 import { Role, User, AuditEvent } from '@prisma/client';
 import { createHash, randomBytes } from 'crypto';
 
+interface AuthResponse {
+  user: Omit<User, 'password_hash'>;
+  access_token: string;
+  refresh_token: string;
+  expires_in: number;
+}
+
+interface AdminMetrics {
+  userCount: number;
+  auditCount: number;
+  activeTokens: number;
+  recentLogs: any[];
+}
+
 @Injectable()
 export class AuthService {
-    constructor(
-        private prisma: PrismaService,
-        private jwtService: JwtService,
-        private configService: ConfigService,
-    ) { }
+  constructor(
+    private prisma: PrismaService,
+    private jwtService: JwtService,
+    private configService: ConfigService,
+  ) {}
 
-    async register(dto: RegisterDto, ip?: string, userAgent?: string) {
-        const existingUser = await this.prisma.user.findUnique({
-            where: { email: dto.email },
-        });
+  async register(
+    dto: RegisterDto,
+    ip?: string,
+    userAgent?: string,
+  ): Promise<AuthResponse> {
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
 
-        if (existingUser) {
-            throw new BadRequestException('Bu e-posta adresi zaten kullanımda');
-        }
-
-        const password_hash = await bcrypt.hash(dto.password, 10);
-        const email_verify_token = randomBytes(32).toString('hex');
-
-        const user = await this.prisma.user.create({
-            data: {
-                email: dto.email,
-                password_hash,
-                email_verify_token,
-            },
-        });
-
-        // MOCK: Send verification email
-        console.log(`[MOCK EMAIL] Alıcı: ${user.email}, Konu: Hesap Doğrulama, Kod: ${email_verify_token}`);
-
-        await this.logEvent(AuditEvent.REGISTER, user.id, ip, userAgent, { email: user.email });
-
-        const tokens = await this.generateTokens(user);
-        return {
-            user: this.excludePassword(user),
-            ...tokens,
-        };
+    if (existingUser) {
+      throw new BadRequestException('Bu e-posta adresi zaten kullanımda');
     }
 
-    async verifyEmail(dto: VerifyEmailDto, ip?: string, userAgent?: string) {
-        const user = await this.prisma.user.findFirst({
-            where: { email_verify_token: dto.token },
-        });
+    const password_hash = await bcrypt.hash(dto.password, 10);
+    const email_verify_token = randomBytes(32).toString('hex');
 
-        if (!user) {
-            throw new BadRequestException('Geçersiz doğrulama kodu');
-        }
+    const user = await this.prisma.user.create({
+      data: {
+        email: dto.email,
+        password_hash,
+        email_verify_token,
+      },
+    });
 
+    // MOCK: Send verification email
+    console.log(
+      `[MOCK EMAIL] Alıcı: ${user.email}, Konu: Hesap Doğrulama, Kod: ${email_verify_token}`,
+    );
+
+    await this.logEvent(AuditEvent.REGISTER, user.id, ip, userAgent, {
+      email: user.email,
+    });
+
+    const tokens = await this.generateTokens(user);
+    return {
+      user: this.excludePassword(user),
+      ...tokens,
+    };
+  }
+
+  async verifyEmail(
+    dto: VerifyEmailDto,
+    ip?: string,
+    userAgent?: string,
+  ): Promise<{ message: string }> {
+    const user = await this.prisma.user.findFirst({
+      where: { email_verify_token: dto.token },
+    });
+
+    if (!user) {
+      throw new BadRequestException('Geçersiz doğrulama kodu');
+    }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        is_email_verified: true,
+        email_verify_token: null,
+      },
+    });
+
+    await this.logEvent(AuditEvent.EMAIL_VERIFICATION, user.id, ip, userAgent);
+
+    return { message: 'E-posta adresi başarıyla doğrulandı' };
+  }
+
+  async login(
+    dto: LoginDto,
+    ip?: string,
+    userAgent?: string,
+  ): Promise<AuthResponse> {
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Geçersiz kimlik bilgileri');
+    }
+
+    // Check if user is locked
+    if (user.locked_until && user.locked_until > new Date()) {
+      const remainingMinutes = Math.ceil(
+        (user.locked_until.getTime() - Date.now()) / 60000,
+      );
+      throw new ForbiddenException(
+        `Hesabınız kilitlendi. Lütfen ${remainingMinutes} dakika sonra tekrar deneyin.`,
+      );
+    }
+
+    // Check if user is active
+    if (!user.is_active) {
+      throw new ForbiddenException('Hesabınız aktif değil');
+    }
+
+    const isPasswordValid = await bcrypt.compare(
+      dto.password,
+      user.password_hash,
+    );
+
+    if (!isPasswordValid) {
+      const maxAttempts = parseInt(
+        this.configService.get<string>('MAX_LOGIN_ATTEMPTS') || '5',
+        10,
+      );
+      const lockoutDuration = parseInt(
+        this.configService.get<string>('LOCKOUT_DURATION_MINUTES') || '15',
+        10,
+      );
+
+      const failed_login_count = user.failed_login_count + 1;
+
+      if (failed_login_count >= maxAttempts) {
         await this.prisma.user.update({
-            where: { id: user.id },
-            data: {
-                is_email_verified: true,
-                email_verify_token: null,
-            },
+          where: { id: user.id },
+          data: {
+            failed_login_count,
+            locked_until: new Date(Date.now() + lockoutDuration * 60000),
+          },
         });
+        throw new ForbiddenException(
+          `Çok fazla hatalı giriş denemesi nedeniyle hesabınız kilitlendi. ${lockoutDuration} dakika sonra tekrar deneyin.`,
+        );
+      }
 
-        await this.logEvent(AuditEvent.EMAIL_VERIFICATION, user.id, ip, userAgent);
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { failed_login_count },
+      });
 
-        return { message: 'E-posta adresi başarıyla doğrulandı' };
+      throw new UnauthorizedException('Geçersiz kimlik bilgileri');
     }
 
-    async login(dto: LoginDto, ip?: string, userAgent?: string) {
-        const user = await this.prisma.user.findUnique({
-            where: { email: dto.email },
-        });
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        failed_login_count: 0,
+        locked_until: null,
+        last_login_at: new Date(),
+      },
+    });
 
-        if (!user) {
-            throw new UnauthorizedException('Geçersiz kimlik bilgileri');
-        }
+    await this.logEvent(AuditEvent.LOGIN, user.id, ip, userAgent);
 
-        // Check if user is locked
-        if (user.locked_until && user.locked_until > new Date()) {
-            const remainingMinutes = Math.ceil(
-                (user.locked_until.getTime() - Date.now()) / 60000,
-            );
-            throw new ForbiddenException(
-                `Hesabınız kilitlendi. Lütfen ${remainingMinutes} dakika sonra tekrar deneyin.`,
-            );
-        }
+    const tokens = await this.generateTokens(user);
+    return {
+      user: this.excludePassword(user),
+      ...tokens,
+    };
+  }
 
-        // Check if user is active
-        if (!user.is_active) {
-            throw new ForbiddenException('Hesabınız aktif değil');
-        }
+  async refreshToken(
+    refreshToken: string,
+    ip?: string,
+    userAgent?: string,
+  ): Promise<Omit<AuthResponse, 'user'>> {
+    const tokenHash = this.hashToken(refreshToken);
 
-        const isPasswordValid = await bcrypt.compare(dto.password, user.password_hash);
+    const tokenRecord = await this.prisma.refreshToken.findUnique({
+      where: { token_hash: tokenHash },
+      include: { user: true },
+    });
 
-        if (!isPasswordValid) {
-            const maxAttempts = parseInt(this.configService.get('MAX_LOGIN_ATTEMPTS') || '5');
-            const lockoutDuration = parseInt(this.configService.get('LOCKOUT_DURATION_MINUTES') || '15');
-
-            const failed_login_count = user.failed_login_count + 1;
-
-            if (failed_login_count >= maxAttempts) {
-                await this.prisma.user.update({
-                    where: { id: user.id },
-                    data: {
-                        failed_login_count,
-                        locked_until: new Date(Date.now() + lockoutDuration * 60000),
-                    },
-                });
-                throw new ForbiddenException(
-                    `Çok fazla hatalı giriş denemesi nedeniyle hesabınız kilitlendi. ${lockoutDuration} dakika sonra tekrar deneyin.`,
-                );
-            }
-
-            await this.prisma.user.update({
-                where: { id: user.id },
-                data: { failed_login_count },
-            });
-
-            throw new UnauthorizedException('Geçersiz kimlik bilgileri');
-        }
-
-        await this.prisma.user.update({
-            where: { id: user.id },
-            data: {
-                failed_login_count: 0,
-                locked_until: null,
-                last_login_at: new Date(),
-            },
-        });
-
-        await this.logEvent(AuditEvent.LOGIN, user.id, ip, userAgent);
-
-        const tokens = await this.generateTokens(user);
-        return {
-            user: this.excludePassword(user),
-            ...tokens,
-        };
+    if (
+      !tokenRecord ||
+      tokenRecord.revoked ||
+      tokenRecord.expires_at < new Date()
+    ) {
+      throw new UnauthorizedException(
+        'Geçersiz veya süresi dolmuş yenileme jetonu (refresh token)',
+      );
     }
 
-    async refreshToken(refreshToken: string, ip?: string, userAgent?: string) {
-        const tokenHash = this.hashToken(refreshToken);
+    await this.prisma.refreshToken.update({
+      where: { id: tokenRecord.id },
+      data: { revoked: true },
+    });
 
-        const tokenRecord = await this.prisma.refreshToken.findUnique({
-            where: { token_hash: tokenHash },
-            include: { user: true },
-        });
+    await this.logEvent(AuditEvent.REFRESH, tokenRecord.user_id, ip, userAgent);
 
-        if (!tokenRecord || tokenRecord.revoked || tokenRecord.expires_at < new Date()) {
-            throw new UnauthorizedException('Geçersiz veya süresi dolmuş yenileme jetonu (refresh token)');
-        }
+    const tokens = await this.generateTokens(tokenRecord.user);
+    return tokens;
+  }
 
-        await this.prisma.refreshToken.update({
-            where: { id: tokenRecord.id },
-            data: { revoked: true },
-        });
-
-        await this.logEvent(AuditEvent.REFRESH, tokenRecord.user_id, ip, userAgent);
-
-        const tokens = await this.generateTokens(tokenRecord.user);
-        return tokens;
+  async logout(
+    userId: string,
+    refreshToken?: string,
+    ip?: string,
+    userAgent?: string,
+  ): Promise<{ message: string }> {
+    if (refreshToken) {
+      const tokenHash = this.hashToken(refreshToken);
+      await this.prisma.refreshToken.updateMany({
+        where: { token_hash: tokenHash, user_id: userId },
+        data: { revoked: true },
+      });
+    } else {
+      await this.prisma.refreshToken.updateMany({
+        where: { user_id: userId },
+        data: { revoked: true },
+      });
     }
 
-    async logout(userId: string, refreshToken?: string, ip?: string, userAgent?: string) {
-        if (refreshToken) {
-            const tokenHash = this.hashToken(refreshToken);
-            await this.prisma.refreshToken.updateMany({
-                where: { token_hash: tokenHash, user_id: userId },
-                data: { revoked: true },
-            });
-        } else {
-            await this.prisma.refreshToken.updateMany({
-                where: { user_id: userId },
-                data: { revoked: true },
-            });
-        }
+    await this.logEvent(AuditEvent.LOGOUT, userId, ip, userAgent);
 
-        await this.logEvent(AuditEvent.LOGOUT, userId, ip, userAgent);
+    return { message: 'Başarıyla çıkış yapıldı' };
+  }
 
-        return { message: 'Başarıyla çıkış yapıldı' };
+  async forgotPassword(
+    dto: ForgotPasswordDto,
+    ip?: string,
+    userAgent?: string,
+  ): Promise<{ message: string }> {
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
+
+    if (!user) {
+      // Don't reveal user existence for security
+      return {
+        message: 'Hesap mevcutsa, şifre sıfırlama bağlantısı gönderilmiştir.',
+      };
     }
 
-    async forgotPassword(dto: ForgotPasswordDto, ip?: string, userAgent?: string) {
-        const user = await this.prisma.user.findUnique({
-            where: { email: dto.email },
-        });
+    const token = randomBytes(32).toString('hex');
+    const expires = new Date(Date.now() + 3600000); // 1 hour
 
-        if (!user) {
-            // Don't reveal user existence for security
-            return { message: 'Hesap mevcutsa, şifre sıfırlama bağlantısı gönderilmiştir.' };
-        }
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password_reset_token: token,
+        password_reset_expires: expires,
+      },
+    });
 
-        const token = randomBytes(32).toString('hex');
-        const expires = new Date(Date.now() + 3600000); // 1 hour
+    // MOCK: Send reset email
+    console.log(
+      `[MOCK EMAIL] Alıcı: ${user.email}, Konu: Şifre Sıfırlama, Kod: ${token}`,
+    );
 
-        await this.prisma.user.update({
-            where: { id: user.id },
-            data: {
-                password_reset_token: token,
-                password_reset_expires: expires,
-            },
-        });
+    await this.logEvent(
+      AuditEvent.PASSWORD_RESET_REQUEST,
+      user.id,
+      ip,
+      userAgent,
+    );
 
-        // MOCK: Send reset email
-        console.log(`[MOCK EMAIL] Alıcı: ${user.email}, Konu: Şifre Sıfırlama, Kod: ${token}`);
+    return {
+      message: 'Hesap mevcutsa, şifre sıfırlama bağlantısı gönderilmiştir.',
+    };
+  }
 
-        await this.logEvent(AuditEvent.PASSWORD_RESET_REQUEST, user.id, ip, userAgent);
+  async resetPassword(
+    dto: ResetPasswordDto,
+    ip?: string,
+    userAgent?: string,
+  ): Promise<{ message: string }> {
+    const user = await this.prisma.user.findFirst({
+      where: {
+        password_reset_token: dto.token,
+        password_reset_expires: { gt: new Date() },
+      },
+    });
 
-        return { message: 'Hesap mevcutsa, şifre sıfırlama bağlantısı gönderilmiştir.' };
+    if (!user) {
+      throw new BadRequestException(
+        'Geçersiz veya süresi dolmuş sıfırlama kodu',
+      );
     }
 
-    async resetPassword(dto: ResetPasswordDto, ip?: string, userAgent?: string) {
-        const user = await this.prisma.user.findFirst({
-            where: {
-                password_reset_token: dto.token,
-                password_reset_expires: { gt: new Date() },
-            },
-        });
+    const password_hash = await bcrypt.hash(dto.password, 10);
 
-        if (!user) {
-            throw new BadRequestException('Geçersiz veya süresi dolmuş sıfırlama kodu');
-        }
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password_hash,
+        password_reset_token: null,
+        password_reset_expires: null,
+        failed_login_count: 0,
+        locked_until: null,
+      },
+    });
 
-        const password_hash = await bcrypt.hash(dto.password, 10);
+    await this.logEvent(
+      AuditEvent.PASSWORD_RESET_SUCCESS,
+      user.id,
+      ip,
+      userAgent,
+    );
 
-        await this.prisma.user.update({
-            where: { id: user.id },
-            data: {
-                password_hash,
-                password_reset_token: null,
-                password_reset_expires: null,
-                failed_login_count: 0,
-                locked_until: null,
-            },
-        });
+    return { message: 'Şifreniz başarıyla sıfırlandı' };
+  }
 
-        await this.logEvent(AuditEvent.PASSWORD_RESET_SUCCESS, user.id, ip, userAgent);
+  async getProfile(userId: string): Promise<any> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
 
-        return { message: 'Şifreniz başarıyla sıfırlandı' };
+    if (!user) {
+      throw new UnauthorizedException('Kullanıcı bulunamadı');
     }
 
-    async getProfile(userId: string) {
-        const user = await this.prisma.user.findUnique({
-            where: { id: userId },
-        });
+    return {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      is_email_verified: user.is_email_verified,
+    };
+  }
 
-        if (!user) {
-            throw new UnauthorizedException('Kullanıcı bulunamadı');
-        }
+  async createUserByAdmin(
+    dto: RegisterDto,
+    role: Role = Role.USER,
+  ): Promise<Omit<User, 'password_hash'>> {
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
 
-        return {
-            id: user.id,
-            email: user.email,
-            role: user.role,
-            is_email_verified: user.is_email_verified,
-        };
+    if (existingUser) {
+      throw new BadRequestException('Bu e-posta adresi zaten kullanımda');
     }
 
-    async createUserByAdmin(dto: RegisterDto, role: Role = Role.USER) {
-        const existingUser = await this.prisma.user.findUnique({
-            where: { email: dto.email },
-        });
+    const password_hash = await bcrypt.hash(dto.password, 10);
 
-        if (existingUser) {
-            throw new BadRequestException('Bu e-posta adresi zaten kullanımda');
-        }
+    const user = await this.prisma.user.create({
+      data: {
+        email: dto.email,
+        password_hash,
+        role,
+        is_email_verified: true, // Admins create verified users
+      },
+    });
 
-        const password_hash = await bcrypt.hash(dto.password, 10);
+    return this.excludePassword(user);
+  }
 
-        const user = await this.prisma.user.create({
-            data: {
-                email: dto.email,
-                password_hash,
-                role,
-                is_email_verified: true, // Admins create verified users
-            },
-        });
+  async getAdminMetrics(): Promise<AdminMetrics> {
+    const [userCount, auditCount, activeTokens] = await Promise.all([
+      this.prisma.user.count(),
+      this.prisma.auditLog.count(),
+      this.prisma.refreshToken.count({
+        where: { revoked: false, expires_at: { gt: new Date() } },
+      }),
+    ]);
 
-        return this.excludePassword(user);
+    const recentLogs = await this.prisma.auditLog.findMany({
+      take: 5,
+      orderBy: { created_at: 'desc' },
+      include: { user: { select: { email: true } } },
+    });
+
+    return {
+      userCount,
+      auditCount,
+      activeTokens,
+      recentLogs: recentLogs as any[],
+    };
+  }
+
+  private async logEvent(
+    event: AuditEvent,
+    userId: string | null,
+    ip?: string,
+    userAgent?: string,
+    metadata?: Record<string, any>,
+  ): Promise<void> {
+    await this.prisma.auditLog.create({
+      data: {
+        event,
+        user_id: userId,
+        ip_address: ip,
+        user_agent: userAgent,
+        metadata: (metadata || {}) as any,
+      },
+    });
+  }
+
+  private async generateTokens(
+    user: User,
+  ): Promise<Omit<AuthResponse, 'user'>> {
+    const payload = { sub: user.id, email: user.email, role: user.role };
+    const accessExpiresIn =
+      this.configService.get<string>('JWT_ACCESS_EXPIRATION') || '15m';
+
+    const accessToken = this.jwtService.sign(payload, {
+      secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
+      expiresIn: accessExpiresIn as any,
+    });
+
+    const expiresInSeconds = this.parseExpirationToSeconds(accessExpiresIn);
+
+    const refreshTokenValue = randomBytes(64).toString('hex');
+    const tokenHash = this.hashToken(refreshTokenValue);
+
+    const refreshExpiresIn =
+      this.configService.get<string>('JWT_REFRESH_EXPIRATION') || '7d';
+    const expiresAt = new Date();
+
+    const match = refreshExpiresIn.match(/^(\d+)([dhms])$/);
+    if (match) {
+      const value = parseInt(match[1], 10);
+      const unit = match[2];
+      switch (unit) {
+        case 'd':
+          expiresAt.setDate(expiresAt.getDate() + value);
+          break;
+        case 'h':
+          expiresAt.setHours(expiresAt.getHours() + value);
+          break;
+        case 'm':
+          expiresAt.setMinutes(expiresAt.getMinutes() + value);
+          break;
+        case 's':
+          expiresAt.setSeconds(expiresAt.getSeconds() + value);
+          break;
+      }
+    } else {
+      expiresAt.setDate(expiresAt.getDate() + 7);
     }
 
-    async getAdminMetrics() {
-        const [userCount, auditCount, activeTokens] = await Promise.all([
-            this.prisma.user.count(),
-            this.prisma.auditLog.count(),
-            this.prisma.refreshToken.count({ where: { revoked: false, expires_at: { gt: new Date() } } }),
-        ]);
+    await this.prisma.refreshToken.create({
+      data: {
+        token_hash: tokenHash,
+        user_id: user.id,
+        expires_at: expiresAt,
+      },
+    });
 
-        const recentLogs = await this.prisma.auditLog.findMany({
-            take: 5,
-            orderBy: { created_at: 'desc' },
-            include: { user: { select: { email: true } } },
-        });
+    return {
+      access_token: accessToken,
+      refresh_token: refreshTokenValue,
+      expires_in: expiresInSeconds,
+    };
+  }
 
-        return {
-            userCount,
-            auditCount,
-            activeTokens,
-            recentLogs,
-        };
+  private hashToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+  }
+
+  private parseExpirationToSeconds(expiration: string): number {
+    const match = expiration.match(/^(\d+)([dhms])$/);
+    if (!match) return 900;
+    const value = parseInt(match[1], 10);
+    const unit = match[2];
+    switch (unit) {
+      case 'd':
+        return value * 86400;
+      case 'h':
+        return value * 3600;
+      case 'm':
+        return value * 60;
+      case 's':
+        return value;
+      default:
+        return 900;
     }
+  }
 
-    private async logEvent(event: AuditEvent, userId: string | null, ip?: string, userAgent?: string, metadata?: any) {
-        await this.prisma.auditLog.create({
-            data: {
-                event,
-                user_id: userId,
-                ip_address: ip,
-                user_agent: userAgent,
-                metadata: metadata || {},
-            },
-        });
-    }
-
-    private async generateTokens(user: User) {
-        const payload = { sub: user.id, email: user.email, role: user.role };
-        const accessExpiresIn = this.configService.get('JWT_ACCESS_EXPIRATION') || '15m';
-
-        const accessToken = this.jwtService.sign(payload, {
-            secret: this.configService.get('JWT_ACCESS_SECRET'),
-            expiresIn: accessExpiresIn,
-        });
-
-        const expiresInSeconds = this.parseExpirationToSeconds(accessExpiresIn);
-
-        const refreshTokenValue = randomBytes(64).toString('hex');
-        const tokenHash = this.hashToken(refreshTokenValue);
-
-        const refreshExpiresIn = this.configService.get('JWT_REFRESH_EXPIRATION') || '7d';
-        const expiresAt = new Date();
-
-        const match = refreshExpiresIn.match(/^(\d+)([dhms])$/);
-        if (match) {
-            const value = parseInt(match[1]);
-            const unit = match[2];
-            switch (unit) {
-                case 'd': expiresAt.setDate(expiresAt.getDate() + value); break;
-                case 'h': expiresAt.setHours(expiresAt.getHours() + value); break;
-                case 'm': expiresAt.setMinutes(expiresAt.getMinutes() + value); break;
-                case 's': expiresAt.setSeconds(expiresAt.getSeconds() + value); break;
-            }
-        } else {
-            expiresAt.setDate(expiresAt.getDate() + 7);
-        }
-
-        await this.prisma.refreshToken.create({
-            data: {
-                token_hash: tokenHash,
-                user_id: user.id,
-                expires_at: expiresAt,
-            },
-        });
-
-        return {
-            access_token: accessToken,
-            refresh_token: refreshTokenValue,
-            expires_in: expiresInSeconds,
-        };
-    }
-
-    private hashToken(token: string): string {
-        return createHash('sha256').update(token).digest('hex');
-    }
-
-    private parseExpirationToSeconds(expiration: string): number {
-        const match = expiration.match(/^(\d+)([dhms])$/);
-        if (!match) return 900;
-        const value = parseInt(match[1]);
-        const unit = match[2];
-        switch (unit) {
-            case 'd': return value * 86400;
-            case 'h': return value * 3600;
-            case 'm': return value * 60;
-            case 's': return value;
-            default: return 900;
-        }
-    }
-
-    private excludePassword(user: User) {
-        const { password_hash, ...userWithoutPassword } = user;
-        return userWithoutPassword;
-    }
+  private excludePassword(user: User): Omit<User, 'password_hash'> {
+    const { password_hash: _password_hash, ...userWithoutPassword } = user;
+    return userWithoutPassword;
+  }
 }

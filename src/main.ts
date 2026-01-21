@@ -37,4 +37,7 @@ async function bootstrap() {
   console.log(`Uygulama şu adreste çalışıyor: http://localhost:${port}`);
   console.log(`Swagger dökümantasyonu: http://localhost:${port}/api`);
 }
-bootstrap();
+bootstrap().catch((err) => {
+  console.error('Uygulama başlatılamadı:', err);
+  process.exit(1);
+});

@@ -20,9 +20,7 @@ services:
       - dev-network
 
   app:
-    build: 
-      context: .
-      dockerfile: Dockerfile
+    build: .
     container_name: nestjs-app-dev
     volumes:
       - .:/app
@@ -33,11 +31,11 @@ services:
       JWT_REFRESH_SECRET: yerel-gelistirme-yenileme-anahtari
       NODE_ENV: development
     ports:
-      - '3001:3000'
+      - '3000:3000'
     depends_on:
       postgres:
         condition: service_healthy
-    command: sh -c "npx prisma migrate dev && npm run start:dev"
+    command: sh -c "npx prisma db push && npm run start:dev"
     networks:
       - dev-network
 
