@@ -221,7 +221,7 @@ describe('Auth (e2e)', () => {
         .send({ refresh_token: refreshToken })
         .expect(200)
         .expect((res: { body: AuthResponse }) => {
-          expect(res.body.message).toBe('Başarıyla çıkış yapıldı');
+          expect(res.body.message).toBe('Logged out successfully');
         });
     });
   });

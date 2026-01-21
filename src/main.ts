@@ -17,16 +17,16 @@ async function bootstrap() {
 
   // Swagger Configuration
   const config = new DocumentBuilder()
-    .setTitle('NestJS Kimlik Doğrulama API')
+    .setTitle('NestJS Advanced Auth API')
     .setDescription(
-      'Gelişmiş özelliklere sahip kullanıcı kimlik doğrulama ve yönetim API dökümantasyonu.',
+      'Advanced user authentication and management API documentation.',
     )
     .setVersion('1.0')
     .addBearerAuth()
-    .addTag('auth', 'Kimlik doğrulama, kayıt ve şifre işlemleri')
-    .addTag('users', 'Kullanıcı yönetimi (Admin)')
-    .addTag('admin', 'Sistem metrikleri ve denetim kayıtları')
-    .addTag('health', 'Servis sağlık kontrolü')
+    .addTag('auth', 'Authentication, registration and password operations')
+    .addTag('users', 'User management (Admin)')
+    .addTag('admin', 'System metrics and audit logs')
+    .addTag('health', 'Service health check')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
@@ -34,10 +34,10 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
-  console.log(`Uygulama şu adreste çalışıyor: http://localhost:${port}`);
-  console.log(`Swagger dökümantasyonu: http://localhost:${port}/api`);
+  console.log(`Application is running on: http://localhost:${port}`);
+  console.log(`Swagger documentation: http://localhost:${port}/api`);
 }
 bootstrap().catch((err) => {
-  console.error('Uygulama başlatılamadı:', err);
+  console.error('Application failed to start:', err);
   process.exit(1);
 });

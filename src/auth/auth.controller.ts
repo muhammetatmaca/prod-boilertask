@@ -33,11 +33,11 @@ import { Role, User } from '@prisma/client';
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(private readonly authService: AuthService) { }
 
   @Post('register')
-  @ApiOperation({ summary: 'Yeni kullanıcı kaydı oluşturur' })
-  @ApiResponse({ status: 201, description: 'Kullanıcı başarıyla oluşturuldu' })
+  @ApiOperation({ summary: 'Creates a new user registration' })
+  @ApiResponse({ status: 201, description: 'User created successfully' })
   async register(
     @Req() req: Request,
     @Body() dto: RegisterDto,
@@ -48,8 +48,8 @@ export class AuthController {
 
   @Post('verify-email')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'E-posta adresini doğrulama kodu ile doğrular' })
-  @ApiResponse({ status: 200, description: 'E-posta başarıyla doğrulandı' })
+  @ApiOperation({ summary: 'Verifies email with verification code' })
+  @ApiResponse({ status: 200, description: 'Email verified successfully' })
   async verifyEmail(
     @Req() req: Request,
     @Body() dto: VerifyEmailDto,
@@ -60,10 +60,10 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'E-posta ve şifre ile giriş yapar ve token döner' })
-  @ApiResponse({ status: 200, description: 'Giriş başarılı' })
-  @ApiResponse({ status: 401, description: 'Hatalı bilgiler' })
-  @ApiResponse({ status: 403, description: 'Hesap kilitli veya devre dışı' })
+  @ApiOperation({ summary: 'Login with email and password' })
+  @ApiResponse({ status: 200, description: 'Login successful' })
+  @ApiResponse({ status: 401, description: 'Invalid credentials' })
+  @ApiResponse({ status: 403, description: 'Account locked or inactive' })
   async login(
     @Req() req: Request,
     @Body() dto: LoginDto,
@@ -75,9 +75,9 @@ export class AuthController {
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Refresh token kullanarak yeni access token üretir',
+    summary: 'Refresh access token using refresh token',
   })
-  @ApiResponse({ status: 200, description: 'Tokenlar başarıyla yenilendi' })
+  @ApiResponse({ status: 200, description: 'Tokens refreshed successfully' })
   async refreshToken(
     @Req() req: Request,
     @Body() dto: RefreshTokenDto,
@@ -90,8 +90,8 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Oturumu kapatır ve tokenları geçersiz kılar' })
-  @ApiResponse({ status: 200, description: 'Başarıyla çıkış yapıldı' })
+  @ApiOperation({ summary: 'Logout and invalidate tokens' })
+  @ApiResponse({ status: 200, description: 'Logged out successfully' })
   async logout(
     @Req() req: Request,
     @CurrentUser() user: { userId: string },
@@ -108,10 +108,10 @@ export class AuthController {
 
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Şifre sıfırlama bağlantısı talep eder' })
+  @ApiOperation({ summary: 'Request password reset link' })
   @ApiResponse({
     status: 200,
-    description: 'Talep alındı (güvenlik için kullanıcı varlığı belirtilmez)',
+    description: 'Request received (user existence not revealed)',
   })
   async forgotPassword(
     @Req() req: Request,
@@ -123,8 +123,8 @@ export class AuthController {
 
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Token kullanarak şifreyi sıfırlar' })
-  @ApiResponse({ status: 200, description: 'Şifre başarıyla güncellendi' })
+  @ApiOperation({ summary: 'Reset password using token' })
+  @ApiResponse({ status: 200, description: 'Password updated successfully' })
   async resetPassword(
     @Req() req: Request,
     @Body() dto: ResetPasswordDto,
@@ -137,9 +137,9 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: 'Giriş yapmış kullanıcının profil bilgilerini getirir',
+    summary: 'Get current user profile',
   })
-  @ApiResponse({ status: 200, description: 'Profil başarıyla getirildi' })
+  @ApiResponse({ status: 200, description: 'Profile retrieved successfully' })
   async getProfile(
     @CurrentUser() user: { userId: string },
   ): Promise<UserProfile> {
@@ -151,11 +151,11 @@ export class AuthController {
   @Roles(Role.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: 'Admin tarafından kullanıcı oluşturulmasını sağlar',
+    summary: 'Allows admin to create a user',
   })
   @ApiResponse({
     status: 201,
-    description: 'Kullanıcı admin tarafından oluşturuldu',
+    description: 'User created by admin',
   })
   async createUserByAdmin(
     @Body() dto: RegisterDto,

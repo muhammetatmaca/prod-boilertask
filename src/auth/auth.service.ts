@@ -45,7 +45,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private configService: ConfigService,
-  ) {}
+  ) { }
 
   async register(
     dto: RegisterDto,
@@ -57,7 +57,7 @@ export class AuthService {
     });
 
     if (existingUser) {
-      throw new BadRequestException('Bu e-posta adresi zaten kullanımda');
+      throw new BadRequestException('This email is already in use');
     }
 
     const password_hash = await bcrypt.hash(dto.password, 10);
@@ -73,7 +73,7 @@ export class AuthService {
 
     // MOCK: Send verification email
     console.log(
-      `[MOCK EMAIL] Alıcı: ${user.email}, Konu: Hesap Doğrulama, Kod: ${email_verify_token}`,
+      `[MOCK EMAIL] To: ${user.email}, Subject: Account Verification, Code: ${email_verify_token}`,
     );
 
     await this.logEvent(AuditEvent.REGISTER, user.id, ip, userAgent, {
@@ -97,7 +97,7 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new BadRequestException('Geçersiz doğrulama kodu');
+      throw new BadRequestException('Invalid verification code');
     }
 
     await this.prisma.user.update({
@@ -110,7 +110,7 @@ export class AuthService {
 
     await this.logEvent(AuditEvent.EMAIL_VERIFICATION, user.id, ip, userAgent);
 
-    return { message: 'E-posta adresi başarıyla doğrulandı' };
+    return { message: 'Email verified successfully' };
   }
 
   async login(
@@ -123,7 +123,7 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new UnauthorizedException('Geçersiz kimlik bilgileri');
+      throw new UnauthorizedException('Invalid credentials');
     }
 
     // Check if user is locked
@@ -132,13 +132,13 @@ export class AuthService {
         (user.locked_until.getTime() - Date.now()) / 60000,
       );
       throw new ForbiddenException(
-        `Hesabınız kilitlendi. Lütfen ${remainingMinutes} dakika sonra tekrar deneyin.`,
+        `Your account is locked. Please try again in ${remainingMinutes} minutes.`,
       );
     }
 
     // Check if user is active
     if (!user.is_active) {
-      throw new ForbiddenException('Hesabınız aktif değil');
+      throw new ForbiddenException('Your account is inactive');
     }
 
     const isPasswordValid = await bcrypt.compare(
@@ -167,7 +167,7 @@ export class AuthService {
           },
         });
         throw new ForbiddenException(
-          `Çok fazla hatalı giriş denemesi nedeniyle hesabınız kilitlendi. ${lockoutDuration} dakika sonra tekrar deneyin.`,
+          `Your account has been locked due to too many failed login attempts. Please try again in ${lockoutDuration} minutes.`,
         );
       }
 
@@ -176,7 +176,7 @@ export class AuthService {
         data: { failed_login_count },
       });
 
-      throw new UnauthorizedException('Geçersiz kimlik bilgileri');
+      throw new UnauthorizedException('Invalid credentials');
     }
 
     await this.prisma.user.update({
@@ -215,7 +215,7 @@ export class AuthService {
       tokenRecord.expires_at < new Date()
     ) {
       throw new UnauthorizedException(
-        'Geçersiz veya süresi dolmuş yenileme jetonu (refresh token)',
+        'Invalid or expired refresh token',
       );
     }
 
@@ -251,7 +251,7 @@ export class AuthService {
 
     await this.logEvent(AuditEvent.LOGOUT, userId, ip, userAgent);
 
-    return { message: 'Başarıyla çıkış yapıldı' };
+    return { message: 'Logged out successfully' };
   }
 
   async forgotPassword(
@@ -266,7 +266,7 @@ export class AuthService {
     if (!user) {
       // Don't reveal user existence for security
       return {
-        message: 'Hesap mevcutsa, şifre sıfırlama bağlantısı gönderilmiştir.',
+        message: 'Account exists, reset link has been sent.',
       };
     }
 
@@ -283,7 +283,7 @@ export class AuthService {
 
     // MOCK: Send reset email
     console.log(
-      `[MOCK EMAIL] Alıcı: ${user.email}, Konu: Şifre Sıfırlama, Kod: ${token}`,
+      `[MOCK EMAIL] To: ${user.email}, Subject: Password Reset, Code: ${token}`,
     );
 
     await this.logEvent(
@@ -294,7 +294,7 @@ export class AuthService {
     );
 
     return {
-      message: 'Hesap mevcutsa, şifre sıfırlama bağlantısı gönderilmiştir.',
+      message: 'Account exists, reset link has been sent.',
     };
   }
 
@@ -312,7 +312,7 @@ export class AuthService {
 
     if (!user) {
       throw new BadRequestException(
-        'Geçersiz veya süresi dolmuş sıfırlama kodu',
+        'Invalid or expired reset code',
       );
     }
 
@@ -336,7 +336,7 @@ export class AuthService {
       userAgent,
     );
 
-    return { message: 'Şifreniz başarıyla sıfırlandı' };
+    return { message: 'Password has been reset successfully' };
   }
 
   async getProfile(userId: string): Promise<UserProfile> {
@@ -345,7 +345,7 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new UnauthorizedException('Kullanıcı bulunamadı');
+      throw new UnauthorizedException('User not found');
     }
 
     return {
@@ -365,7 +365,7 @@ export class AuthService {
     });
 
     if (existingUser) {
-      throw new BadRequestException('Bu e-posta adresi zaten kullanımda');
+      throw new BadRequestException('This email is already in use');
     }
 
     const password_hash = await bcrypt.hash(dto.password, 10);
