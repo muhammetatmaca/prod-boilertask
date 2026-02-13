@@ -1,4 +1,20 @@
 import {
+<<<<<<< HEAD
+    Controller,
+    Post,
+    Body,
+    UseGuards,
+    Get,
+    HttpCode,
+    HttpStatus,
+    Req,
+} from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { AuthService } from './auth.service';
+import { RegisterDto, LoginDto, RefreshTokenDto, ForgotPasswordDto, ResetPasswordDto, VerifyEmailDto, ResendVerificationDto, ChangePasswordDto, UpdatePreferencesDto } from './dto/auth.dto';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { CurrentUser } from './decorators/current-user.decorator';
+=======
   Controller,
   Post,
   Body,
@@ -29,10 +45,97 @@ import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Role, User } from '@prisma/client';
+>>>>>>> 942d8da489735a8b7ecaa49c6c20563f43f51616
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
+<<<<<<< HEAD
+    constructor(private readonly authService: AuthService) { }
+
+    @Post('register')
+    @ApiOperation({ summary: 'Yeni kullanıcı kaydı oluşturur' })
+    @ApiResponse({ status: 201, description: 'Kullanıcı başarıyla oluşturuldu' })
+    async register(@Req() req: any, @Body() dto: RegisterDto) {
+        return this.authService.register(dto, req.ip, req.headers['user-agent']);
+    }
+
+    @Post('verify-email')
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({ summary: 'E-posta (Simüle)' })
+    async verifyEmail(@Body() dto: VerifyEmailDto) {
+        return this.authService.verifyEmail(dto);
+    }
+
+    @Post('resend-verification')
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({ summary: 'Doğrulama tekrar gönder (Simüle)' })
+    async resendVerification(@Body() dto: ResendVerificationDto) {
+        return this.authService.resendVerification(dto);
+    }
+
+    @Post('login')
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({ summary: 'Giriş yap' })
+    @ApiResponse({ status: 200, description: 'Giriş başarılı ve otomatik doğrulandı' })
+    async login(@Req() req: any, @Body() dto: LoginDto) {
+        return this.authService.login(dto, req.ip, req.headers['user-agent']);
+    }
+
+    @Post('refresh')
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({ summary: 'Token yenile' })
+    async refreshToken(@Req() req: any, @Body() dto: RefreshTokenDto) {
+        return this.authService.refreshToken(dto.refresh_token, req.ip, req.headers['user-agent']);
+    }
+
+    @Post('logout')
+    @UseGuards(JwtAuthGuard)
+    @HttpCode(HttpStatus.OK)
+    @ApiBearerAuth()
+    @ApiOperation({ summary: 'Çıkış yap' })
+    async logout(
+        @Req() req: any,
+        @CurrentUser() user: { userId: string },
+        @Body() dto?: RefreshTokenDto,
+    ) {
+        return this.authService.logout(user.userId, dto?.refresh_token, req.ip, req.headers['user-agent']);
+    }
+
+    @Post('forgot-password')
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({ summary: 'Şifremi unuttum (Simüle)' })
+    async forgotPassword(@Body() dto: ForgotPasswordDto) {
+        return this.authService.forgotPassword(dto);
+    }
+
+    @Post('reset-password')
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({ summary: 'Şifre sıfırla (Simüle)' })
+    async resetPassword(@Body() dto: ResetPasswordDto) {
+        return this.authService.resetPassword(dto);
+    }
+
+    @Get('me')
+    @UseGuards(JwtAuthGuard)
+    @ApiBearerAuth()
+    @ApiOperation({ summary: 'Profil bilgisi' })
+    async getProfile(@CurrentUser() user: { userId: string }) {
+        return this.authService.getProfile(user.userId);
+    }
+
+    @Post('preferences')
+    @UseGuards(JwtAuthGuard)
+    @HttpCode(HttpStatus.OK)
+    @ApiBearerAuth()
+    @ApiOperation({ summary: 'Tercihleri güncelle' })
+    async updatePreferences(
+        @CurrentUser() user: { userId: string },
+        @Body() dto: UpdatePreferencesDto,
+    ) {
+        return this.authService.updatePreferences(user.userId, dto);
+    }
+=======
   constructor(private readonly authService: AuthService) { }
 
   @Post('register')
@@ -162,4 +265,5 @@ export class AuthController {
   ): Promise<Omit<User, 'password_hash'>> {
     return this.authService.createUserByAdmin(dto);
   }
+>>>>>>> 942d8da489735a8b7ecaa49c6c20563f43f51616
 }

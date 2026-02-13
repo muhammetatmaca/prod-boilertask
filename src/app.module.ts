@@ -8,7 +8,13 @@ import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { HealthModule } from './health/health.module';
+<<<<<<< HEAD
+import { MailModule } from './mail/mail.module';
 import { AdminController } from './admin/admin.controller';
+import { ChatModule } from './chat/chat.module';
+=======
+import { AdminController } from './admin/admin.controller';
+>>>>>>> 942d8da489735a8b7ecaa49c6c20563f43f51616
 
 @Module({
   imports: [
@@ -16,16 +22,28 @@ import { AdminController } from './admin/admin.controller';
       isGlobal: true,
       envFilePath: `.env.${process.env.NODE_ENV || 'development'}`,
     }),
+<<<<<<< HEAD
+    ThrottlerModule.forRoot([{
+      ttl: 60000,
+      limit: 10,
+    }]),
+=======
     ThrottlerModule.forRoot([
       {
         ttl: 60000,
         limit: 10,
       },
     ]),
+>>>>>>> 942d8da489735a8b7ecaa49c6c20563f43f51616
     PrismaModule,
     UsersModule,
     AuthModule,
     HealthModule,
+<<<<<<< HEAD
+    MailModule,
+    ChatModule,
+=======
+>>>>>>> 942d8da489735a8b7ecaa49c6c20563f43f51616
   ],
   controllers: [AppController, AdminController],
   providers: [
@@ -36,4 +54,8 @@ import { AdminController } from './admin/admin.controller';
     },
   ],
 })
+<<<<<<< HEAD
+export class AppModule { }
+=======
 export class AppModule {}
+>>>>>>> 942d8da489735a8b7ecaa49c6c20563f43f51616

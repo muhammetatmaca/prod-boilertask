@@ -3,10 +3,18 @@ import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+<<<<<<< HEAD
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+=======
+>>>>>>> 942d8da489735a8b7ecaa49c6c20563f43f51616
 import * as bcrypt from 'bcryptjs';
 
 describe('AuthService', () => {
     let service: AuthService;
+<<<<<<< HEAD
+    let prismaService: PrismaService;
+=======
+>>>>>>> 942d8da489735a8b7ecaa49c6c20563f43f51616
 
     const mockPrismaService = {
         user: {
@@ -59,6 +67,10 @@ describe('AuthService', () => {
         }).compile();
 
         service = module.get<AuthService>(AuthService);
+<<<<<<< HEAD
+        prismaService = module.get<PrismaService>(PrismaService);
+=======
+>>>>>>> 942d8da489735a8b7ecaa49c6c20563f43f51616
 
         jest.clearAllMocks();
     });
@@ -123,10 +135,14 @@ describe('AuthService', () => {
     describe('forgotPassword', () => {
         it('should generate reset token', async () => {
             const dto = { email: 'test@example.com' };
+<<<<<<< HEAD
+            mockPrismaService.user.findUnique.mockResolvedValue({ id: 'uuid-1234', email: 'test@example.com' });
+=======
             mockPrismaService.user.findUnique.mockResolvedValue({
                 id: 'uuid-1234',
                 email: 'test@example.com',
             });
+>>>>>>> 942d8da489735a8b7ecaa49c6c20563f43f51616
             mockPrismaService.user.update.mockResolvedValue({});
             mockPrismaService.auditLog.create.mockResolvedValue({});
 
@@ -140,10 +156,14 @@ describe('AuthService', () => {
     describe('verifyEmail', () => {
         it('should verify email successfully', async () => {
             const dto = { token: 'valid-token' };
+<<<<<<< HEAD
+            mockPrismaService.user.findFirst.mockResolvedValue({ id: 'uuid-1234', email: 'test@example.com' });
+=======
             mockPrismaService.user.findFirst.mockResolvedValue({
                 id: 'uuid-1234',
                 email: 'test@example.com',
             });
+>>>>>>> 942d8da489735a8b7ecaa49c6c20563f43f51616
             mockPrismaService.user.update.mockResolvedValue({});
             mockPrismaService.auditLog.create.mockResolvedValue({});
 

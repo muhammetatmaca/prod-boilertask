@@ -1,3 +1,305 @@
+<<<<<<< HEAD
+import { Injectable, UnauthorizedException, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '../prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
+import { RegisterDto, LoginDto, ForgotPasswordDto, ResetPasswordDto, VerifyEmailDto, UpdatePreferencesDto } from './dto/auth.dto';
+import * as bcrypt from 'bcryptjs';
+import { Role, User, AuditEvent } from '@prisma/client';
+import { createHash, randomBytes } from 'crypto';
+
+@Injectable()
+export class AuthService {
+    constructor(
+        private prisma: PrismaService,
+        private jwtService: JwtService,
+        private configService: ConfigService,
+        private mailService: MailService,
+    ) { }
+
+    async register(dto: RegisterDto, ip?: string, userAgent?: string) {
+        try {
+            const existingUser = await this.prisma.user.findUnique({
+                where: { email: dto.email },
+            });
+
+            if (existingUser) {
+                if (existingUser.is_email_verified) {
+                    throw new BadRequestException('Bu e-posta adresi zaten kullanımda');
+                }
+
+                // Kullanıcı var ama doğrulanmamış -> Yeni kod gönder
+                const password_hash = await bcrypt.hash(dto.password, 10);
+                const email_verify_token = randomBytes(32).toString('hex');
+
+                const user = await this.prisma.user.update({
+                    where: { id: existingUser.id },
+                    data: {
+                        password_hash,
+                        email_verify_token,
+                    },
+                });
+
+                try {
+                    await this.mailService.sendVerificationEmail(user.email, email_verify_token);
+                } catch (e) {
+                    console.error('Mail Hatası (Register):', e);
+                    // Hata fırlatma, kullanıcıya bilgi dön
+                }
+
+                await this.logEvent(AuditEvent.REGISTER, user.id, ip, userAgent, { email: user.email, note: 're-register' });
+
+                return {
+                    message: 'Doğrulama maili tekrar gönderildi. Lütfen e-postanızı kontrol edin.',
+                    user: this.excludePassword(user),
+                };
+            }
+
+            // Yeni Kullanıcı Oluşturma
+            const password_hash = await bcrypt.hash(dto.password, 10);
+            const email_verify_token = randomBytes(32).toString('hex');
+
+            const user = await this.prisma.user.create({
+                data: {
+                    email: dto.email,
+                    password_hash,
+                    is_email_verified: false, // Gerçek doğrulama gerekli
+                    email_verify_token,
+                    role: Role.USER,
+                },
+            });
+
+            try {
+                await this.mailService.sendVerificationEmail(user.email, email_verify_token);
+            } catch (e) {
+                console.error('Mail Hatası (Register):', e);
+            }
+
+            await this.logEvent(AuditEvent.REGISTER, user.id, ip, userAgent, { email: user.email });
+
+            return {
+                message: 'Kayıt başarılı. Lütfen e-postanızı doğrulayın.',
+                user: this.excludePassword(user),
+            };
+        } catch (error) {
+            console.error('Register Error:', error);
+            throw error;
+        }
+    }
+
+    async verifyEmail(dto: VerifyEmailDto) {
+        const user = await this.prisma.user.findFirst({
+            where: { email_verify_token: dto.token },
+        });
+
+        if (!user) {
+            throw new BadRequestException('Geçersiz veya süresi dolmuş kod.');
+        }
+
+        await this.prisma.user.update({
+            where: { id: user.id },
+            data: {
+                is_email_verified: true,
+                email_verify_token: null,
+            },
+        });
+
+        await this.logEvent(AuditEvent.EMAIL_VERIFICATION, user.id);
+        return { message: 'Hesabınız doğrulandı. Giriş yapabilirsiniz.' };
+    }
+
+    async resendVerification(dto: { email: string }) {
+        const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
+        if (!user) return { message: 'İşlem alındı.' };
+        if (user.is_email_verified) throw new BadRequestException('Zaten doğrulanmış.');
+
+        const token = randomBytes(32).toString('hex');
+        await this.prisma.user.update({
+            where: { id: user.id },
+            data: { email_verify_token: token }
+        });
+
+        try {
+            await this.mailService.sendVerificationEmail(user.email, token);
+        } catch (e) { console.error(e); }
+
+        return { message: 'Doğrulama kodu tekrar gönderildi.' };
+    }
+
+    async login(dto: LoginDto, ip?: string, userAgent?: string) {
+        const user = await this.prisma.user.findUnique({
+            where: { email: dto.email },
+        });
+
+        if (!user) throw new UnauthorizedException('Kullanıcı bulunamadı veya şifre yanlış');
+
+        if (!user.is_active) throw new ForbiddenException('Hesap aktif değil');
+
+        // E-posta doğrulama ZORUNLU
+        if (!user.is_email_verified) {
+            throw new ForbiddenException('Lütfen önce e-posta adresinizi doğrulayın.');
+        }
+
+        const isPasswordValid = await bcrypt.compare(dto.password, user.password_hash);
+        if (!isPasswordValid) {
+            const failed_login_count = user.failed_login_count + 1;
+            await this.prisma.user.update({
+                where: { id: user.id },
+                data: { failed_login_count }
+            });
+            throw new UnauthorizedException('Kullanıcı adı veya şifre hatalı');
+        }
+
+        // Başarılı Giriş
+        await this.prisma.user.update({
+            where: { id: user.id },
+            data: { failed_login_count: 0, last_login_at: new Date(), locked_until: null }
+        });
+        await this.logEvent(AuditEvent.LOGIN, user.id, ip, userAgent);
+
+        const tokens = await this.generateTokens(user);
+        return {
+            user: this.excludePassword(user),
+            ...tokens,
+        };
+    }
+
+    async forgotPassword(dto: ForgotPasswordDto) {
+        const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
+        if (!user) return { message: 'Bağlantı gönderildi.' };
+
+        // 6 Haneli sayısal kod (UX için)
+        const token = Math.floor(100000 + Math.random() * 900000).toString();
+        const expires = new Date(Date.now() + 3600000); // 1 saat
+
+        await this.prisma.user.update({
+            where: { id: user.id },
+            data: { password_reset_token: token, password_reset_expires: expires }
+        });
+
+        try {
+            await this.mailService.sendPasswordResetEmail(user.email, token);
+        } catch (e) { console.error(e); }
+
+        return { message: 'Şifre sıfırlama kodu mailinize gönderildi.' };
+    }
+
+    async verifyResetToken(token: string) {
+        const user = await this.prisma.user.findFirst({
+            where: {
+                password_reset_token: token,
+                password_reset_expires: { gt: new Date() },
+            },
+        });
+        if (!user) throw new BadRequestException('Geçersiz kod.');
+        return { message: 'Kod geçerli', email: user.email };
+    }
+
+    async resetPassword(dto: ResetPasswordDto) {
+        const user = await this.prisma.user.findFirst({
+            where: {
+                password_reset_token: dto.token,
+                password_reset_expires: { gt: new Date() },
+            },
+        });
+
+        if (!user) throw new BadRequestException('Geçersiz veya süresi dolmuş kod');
+
+        const password_hash = await bcrypt.hash(dto.password, 10);
+        await this.prisma.user.update({
+            where: { id: user.id },
+            data: {
+                password_hash,
+                password_reset_token: null,
+                password_reset_expires: null,
+                failed_login_count: 0,
+            }
+        });
+
+        return { message: 'Şifreniz başarıyla sıfırlandı.' };
+    }
+
+    // --- Helpers ---
+
+    async getProfile(userId: string) {
+        const user = await this.prisma.user.findUnique({ where: { id: userId } });
+        if (!user) throw new NotFoundException('Kullanıcı bulunamadı');
+        return this.excludePassword(user);
+    }
+
+    async updatePreferences(userId: string, dto: UpdatePreferencesDto) {
+        await this.prisma.user.update({ where: { id: userId }, data: dto });
+        return { message: 'Tercihler güncellendi' };
+    }
+
+    async refreshToken(refreshToken: string, ip?: string, userAgent?: string) {
+        const tokenHash = this.hashToken(refreshToken);
+        const tokenRecord = await this.prisma.refreshToken.findUnique({
+            where: { token_hash: tokenHash },
+            include: { user: true }
+        });
+
+        if (!tokenRecord || tokenRecord.revoked || tokenRecord.expires_at < new Date()) {
+            throw new UnauthorizedException('Geçersiz token');
+        }
+
+        await this.prisma.refreshToken.update({ where: { id: tokenRecord.id }, data: { revoked: true } });
+        return this.generateTokens(tokenRecord.user);
+    }
+
+    async logout(userId: string, refreshToken?: string, ip?: string, userAgent?: string) {
+        if (refreshToken) {
+            const tokenHash = this.hashToken(refreshToken);
+            await this.prisma.refreshToken.updateMany({
+                where: { token_hash: tokenHash, user_id: userId },
+                data: { revoked: true }
+            });
+        }
+        return { message: 'Çıkış yapıldı' };
+    }
+
+    private async logEvent(event: AuditEvent, userId: string | null, ip?: string, userAgent?: string, metadata?: any) {
+        await this.prisma.auditLog.create({
+            data: { event, user_id: userId, ip_address: ip, user_agent: userAgent, metadata: metadata || {} },
+        });
+    }
+
+    private async generateTokens(user: User) {
+        const payload = { sub: user.id, email: user.email, role: user.role };
+        const accessToken = this.jwtService.sign(payload, {
+            secret: this.configService.get('JWT_ACCESS_SECRET') || 'secret',
+            expiresIn: '15m',
+        });
+
+        const refreshTokenValue = randomBytes(64).toString('hex');
+        const tokenHash = this.hashToken(refreshTokenValue);
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 7);
+
+        await this.prisma.refreshToken.create({
+            data: { token_hash: tokenHash, user_id: user.id, expires_at: expiresAt },
+        });
+
+        return { access_token: accessToken, refresh_token: refreshTokenValue, expires_in: 900 };
+    }
+
+    private hashToken(token: string): string {
+        return createHash('sha256').update(token).digest('hex');
+    }
+
+    private excludePassword(user: User) {
+        const { password_hash, ...rest } = user;
+        return rest;
+    }
+
+    // Admin Stub (placeholder)
+    async getAdminMetrics() { return { userCount: 0, auditCount: 0, activeTokens: 0, recentLogs: [] }; }
+    async deleteAccount(userId: string) { return { message: 'Deleted' }; }
+    async exportUserData(userId: string) { return {}; }
+    async changePassword(userId: string, dto: any) { return { message: 'Changed' }; }
+    async createUserByAdmin(dto: any) { return {}; }
+=======
 import {
   Injectable,
   UnauthorizedException,
@@ -510,4 +812,5 @@ export class AuthService {
     const { password_hash: _password_hash, ...userWithoutPassword } = user;
     return userWithoutPassword;
   }
+>>>>>>> 942d8da489735a8b7ecaa49c6c20563f43f51616
 }

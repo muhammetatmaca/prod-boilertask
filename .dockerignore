@@ -5,3 +5,8 @@ dist
 *.md
 .env
 .env.*
+<<<<<<< HEAD
+prod-boilertask
+prod-boilertask-temp
+=======
+>>>>>>> 942d8da489735a8b7ecaa49c6c20563f43f51616

@@ -6,6 +6,17 @@ import { SkipThrottle } from '@nestjs/throttler';
 @Controller('health')
 @SkipThrottle()
 export class HealthController {
+<<<<<<< HEAD
+    @Get()
+    @ApiOperation({ summary: 'Health check endpoint' })
+    @ApiResponse({ status: 200, description: 'Service is healthy' })
+    check() {
+        return {
+            status: 'ok',
+            timestamp: new Date().toISOString(),
+        };
+    }
+=======
   @Get()
   @ApiOperation({ summary: 'Health check endpoint' })
   @ApiResponse({ status: 200, description: 'Service is healthy' })
@@ -15,4 +26,5 @@ export class HealthController {
       timestamp: new Date().toISOString(),
     };
   }
+>>>>>>> 942d8da489735a8b7ecaa49c6c20563f43f51616
 }

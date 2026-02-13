@@ -1,11 +1,33 @@
+<<<<<<< HEAD
+
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+import { ValidationPipe } from '@nestjs/common';
+=======
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+>>>>>>> 942d8da489735a8b7ecaa49c6c20563f43f51616
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+<<<<<<< HEAD
+  // 1. Enable CORS for Frontend Access (Port 5173/5174)
+  app.enableCors({
+    origin: true,
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    credentials: true,
+  });
+
+  // 2. Enable Validation (DTOs)
+  app.useGlobalPipes(new ValidationPipe());
+
+  await app.listen(3000);
+}
+bootstrap();
+=======
   // Global Validation Pipe
   app.useGlobalPipes(
     new ValidationPipe({
@@ -41,3 +63,4 @@ bootstrap().catch((err) => {
   console.error('Application failed to start:', err);
   process.exit(1);
 });
+>>>>>>> 942d8da489735a8b7ecaa49c6c20563f43f51616

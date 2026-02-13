@@ -12,8 +12,11 @@ datasource db {
 
 enum Role {
   USER
+<<<<<<< HEAD
+=======
   MODERATOR
   SUPPORT
+>>>>>>> 942d8da489735a8b7ecaa49c6c20563f43f51616
   ADMIN
 }
 
@@ -25,6 +28,10 @@ enum AuditEvent {
   EMAIL_VERIFICATION
   PASSWORD_RESET_REQUEST
   PASSWORD_RESET_SUCCESS
+<<<<<<< HEAD
+  ACCOUNT_DELETED
+=======
+>>>>>>> 942d8da489735a8b7ecaa49c6c20563f43f51616
 }
 
 model User {
@@ -42,8 +49,44 @@ model User {
   last_login_at        DateTime?
   failed_login_count   Int            @default(0)
   locked_until         DateTime?
+<<<<<<< HEAD
+  
+  // User Preferences
+  theme               String?        @default("system")
+  font_size           String?        @default("medium")
+  language            String?        @default("tr")
+  default_model       String?        @default("crudllm-26")
+  send_with_enter     Boolean        @default(true)
+  chat_history_enabled Boolean       @default(true)
+  data_collection     Boolean        @default(false)
+  wide_chat           Boolean        @default(false)
+
   refreshTokens        RefreshToken[]
   auditLogs            AuditLog[]
+  chats                Chat[]
+}
+
+model Chat {
+  id        String    @id @default(uuid())
+  title     String
+  user_id   String
+  user      User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+  messages  Message[]
+}
+
+model Message {
+  id        String   @id @default(uuid())
+  chat_id   String
+  chat      Chat     @relation(fields: [chat_id], references: [id], onDelete: Cascade)
+  role      String
+  content   String
+  created_at DateTime @default(now())
+=======
+  refreshTokens        RefreshToken[]
+  auditLogs            AuditLog[]
+>>>>>>> 942d8da489735a8b7ecaa49c6c20563f43f51616
 }
 
 model RefreshToken {

@@ -1,27 +1,21 @@
-node_modules/
-dist/
-dist-*/
+node_modules
+dist
+build
 .env
-.env.development
-.env.test
-.env.production
-.env.local
-.env.*.local
-
-# Logs
-logs
+.env.*
+!.env.example
+!.env.prod.example
 *.log
 npm-debug.log*
-
-# IDEs and editors
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS files
+yarn-debug.log*
+yarn-error.log*
 .DS_Store
-Thumbs.db
-
-# Prisma
-/generated/prisma
+.vscode
+.idea
+*.pth
+*.pyc
+__pycache__
+/ai-service/finetuned_model
+/ai-service/venv
+/ui/node_modules
+/ui/dist
